@@ -1,0 +1,1 @@
+./your_program.sh decode l5:wateri47ee
