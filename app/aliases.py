@@ -1,7 +1,7 @@
 from typing import Literal
 from enum import IntEnum
 
-type Command = Literal ["decode", "info", "peers", "handshake", "download_piece", "download"]
+type Command = Literal ["decode", "info", "peers", "handshake", "download_piece", "download", "magnet_parse", "magnet_handshake"]
 MAX_RETRIES = 15
 _16KB = 2 ** 14
 

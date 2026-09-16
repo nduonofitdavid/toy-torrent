@@ -3,6 +3,7 @@ import io
 import random
 import socket
 from string import ascii_letters
+from urllib.parse import unquote
 
 import requests
 
@@ -38,11 +39,11 @@ def generate_random_bytes(length: int):
   result = random.choices(ascii_letters, k=length)
   return "".join(result)
 
-def get_peers(tor_dict: dict, port: int=DEFAULT_PORT, uploaded: int=UPLOADED, downloaded: int=DOWNLOADED, compact: int=COMPACT) -> list[str]:
-  tracker_url = tor_dict["announce"].decode(encoding="utf-8")
-  left = tor_dict["info"]["length"]
+def get_peers(tracker_url: str, left: int, info_hash_url: bytes, port: int=DEFAULT_PORT, uploaded: int=UPLOADED, downloaded: int=DOWNLOADED, compact: int=COMPACT) -> list[str]:
+  # tracker_url = tor_dict["announce"].decode(encoding="utf-8")
+  # left = tor_dict["info"]["length"]
   peer_id: str = generate_random_bytes(20)
-  info_hash_url = calculate_info_hash(tor_dict["info"], use_hex=False) # let requests handle url conversion automatically
+  # info_hash_url = calculate_info_hash(tor_dict["info"], use_hex=False) # let requests handle url conversion automatically
 
   response = requests.get(url=tracker_url, params={
     "info_hash": info_hash_url,
@@ -64,15 +65,14 @@ def get_peers(tor_dict: dict, port: int=DEFAULT_PORT, uploaded: int=UPLOADED, do
   peers = res_dict["peers"]
   return decode_peers(peers)
 
-def perform_handshake(tor_file: str, tor_client: str, close_soc: bool=True) -> socket.socket | None:
-  tor_dict = open_torrent_file(tor_file)
+def perform_handshake(info_hash_in: bytes, tor_client: str, reserved_bytes_val: int=0, close_soc: bool=True) -> socket.socket | None:
   ip_address, port = tor_client.split(':')
 
   buffer = io.BytesIO()
   proto_len: bytes = int(19).to_bytes(1)
   proto: bytes = str("BitTorrent protocol").encode(encoding="utf-8")
-  reserved_bytes = int(8).to_bytes(8)
-  info_hash = calculate_info_hash(tor_dict["info"], use_hex=False)
+  reserved_bytes = reserved_bytes_val.to_bytes(8)
+  info_hash = info_hash_in
   peer_id: bytes = generate_random_bytes(20).encode(encoding="utf-8")
   recv_len = len(proto_len) + len(proto) + len(reserved_bytes) + len(info_hash) + len(peer_id)
 
@@ -120,8 +120,11 @@ def has_piece(s_byte: int, bit_position: int) -> bool:
 
 
 def download_piece(torr_file, tor_dict: dict, piece_idx: int, peers: list[str], output_file: str) -> None:
+  tor_dict = open_torrent_file(torr_file)
+  info_hash = calculate_info_hash(tor_dict["info"], use_hex=False)
+  assert(isinstance(info_hash, bytes))
   for peer in peers:
-    soc: socket.socket | None = perform_handshake(torr_file, peer, close_soc=False)
+    soc: socket.socket | None = perform_handshake(info_hash, peer, close_soc=False)
     if not soc:
       # the error message will be printed by the perform_handshake function already
       continue 
@@ -239,5 +242,66 @@ def download_piece(torr_file, tor_dict: dict, piece_idx: int, peers: list[str], 
       soc.close()
       return
 
+#magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce
+def parse_magnetlink(link: str, verify_tor=False):
+  keys = {}
+  skip = 8
+  if link[:skip] != "magnet:?":
+    raise Exception("Invalid magnet link")
+
+  def add_val(dict, key, val):
+    val = unquote(val)
+    if key in dict:
+      store = dict[key]
+      if isinstance(store, list):
+        dict[key].append(val)
+      else:
+        dict[key] = [dict[key], val]
+    else:
+      dict[key] = val
+  
+  start = skip
+  end = start+1
+  key_ = None
+  while end < (len(link)):
+    curr = link[end]
+    if curr == "=":
+      key_ = link[start:end]
+      start=end+1
+      end+=1
+      continue
+    elif curr == "&":
+      if key_:
+        add_val(keys, key_, link[start:end])
+        start=end+1
+        end+=1
+        continue
+      else:
+        raise Exception("The magnet link is malformed")
+
+    end+=1
+    if end == len(link):
+      if key_:
+        add_val(keys, key_, link[start:end])
+        continue
+      raise Exception("The magnet link is malformed")
+
+  # verifying xt
+  if "xt" not in keys:
+    raise Exception("The xt query parameter was not found in the magnet link")
+
+  if verify_tor:
+    if not "tr" in keys:
+      raise Exception("The magnet link does not contain a tracker url")
+    v = keys["xt"]
+    if v[:9] != "urn:btih:":
+      raise Exception("The magnet link provided is not a bittorrent magnet link")
+    keys["xt"] = v[9:]
+
+  return keys
+
 if __name__ == "__main__":
   print(generate_random_bytes(20))
+  print(parse_magnetlink("magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"))
+  print(parse_magnetlink("magnet:?xt=1&"))
+  print(parse_magnetlink("magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165"))

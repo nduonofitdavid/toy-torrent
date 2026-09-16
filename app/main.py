@@ -2,9 +2,9 @@ import json
 import sys
 
 from .aliases import Command
-from .decoder import decode_string, decode_int, decode_list, decode_dictionary, decode_peers, decode_peer_handshake
+from .decoder import decode_string, decode_int, decode_list, decode_dictionary
 from .encoder import calculate_info_hash, pieces_to_list
-from .utils import open_torrent_file, get_peers, perform_handshake, download_piece
+from .utils import open_torrent_file, get_peers, perform_handshake, download_piece, parse_magnetlink
 
 def decode_bencode(bencoded_value: bytes):
   sample = bencoded_value
@@ -60,7 +60,10 @@ def main():
     case "peers":
       tor_dict = open_torrent_file(sys.argv[2])
 
-      peers = get_peers(tor_dict)
+      tracker_url = tor_dict["announce"].decode(encoding="utf-8")
+      left = tor_dict["info"]["length"]
+      info_hash: bytes = calculate_info_hash(tor_dict["info"], use_hex=False)
+      peers = get_peers(tracker_url, left, info_hash)
       for peer in peers:
         print(peer)
       return
@@ -68,7 +71,9 @@ def main():
     case "handshake":
       tor_file = sys.argv[2]
       tor_client = sys.argv[3]
-      perform_handshake(tor_file=tor_file, tor_client=tor_client)
+      tor_dict = open_torrent_file(tor_file)
+      info_hash = calculate_info_hash(tor_dict["info"], use_hex=False)
+      perform_handshake(info_hash_in=info_hash, tor_client=tor_client)
       return
 
     case "download_piece":
@@ -89,7 +94,11 @@ def main():
       tor_dict = open_torrent_file(torr_file)
       if not out_filename:
         out_filename = tor_dict["info"]["name"].encode(encoding="utf-8") + f"_piece-{piece_idx}"
-      peers = get_peers(tor_dict)
+
+      tracker_url = tor_dict["announce"].decode(encoding="utf-8")
+      left = tor_dict["info"]["length"]
+      info_hash: bytes = calculate_info_hash(tor_dict["info"], use_hex=False)
+      peers = get_peers(tracker_url, left, info_hash)
       download_piece(torr_file, tor_dict, piece_idx, peers, output_file=out_filename)
       return
 
@@ -109,7 +118,10 @@ def main():
       if not out_filename:
         out_filename = tor_dict["info"]["name"].encode(encoding="utf-8")
 
-      peers = get_peers(tor_dict)
+      tracker_url = tor_dict["announce"].decode(encoding="utf-8")
+      left = tor_dict["info"]["length"]
+      info_hash: bytes = calculate_info_hash(tor_dict["info"], use_hex=False)
+      peers = get_peers(tracker_url, left, info_hash)
 
       file_length = tor_dict["info"]["length"]
       piece_length = tor_dict["info"]["piece length"]
@@ -122,6 +134,29 @@ def main():
         download_piece(torr_file, tor_dict, piece_idx, peers, out_filename)        
 
       return 
+
+    case "magnet_parse":
+      magnet_link = sys.argv[2]
+      magnet_dict = parse_magnetlink(magnet_link, verify_tor=True)
+      print("Tracker URL:", magnet_dict["tr"])
+      print("Info Hash: ", magnet_dict["xt"])
+      return
+
+    case "magnet_handshake":
+      magnet_link = sys.argv[2]
+      magnet_dict = parse_magnetlink(magnet_link, verify_tor=True)
+
+      tracker_url = magnet_dict["tr"]
+      left = 999 # dummy placeholder value since length of file is not known
+      info_hash = bytes.fromhex(magnet_dict["xt"])
+      peers = get_peers(tracker_url, left, info_hash)
+      reserved_bytes = 2**20
+      for peer in peers:
+        soc = perform_handshake(info_hash, peer, reserved_bytes_val=reserved_bytes, close_soc=False)
+        if soc:
+          soc.close()
+          break
+      return
 
     case _:
       raise NotImplementedError(f"Unknown command {command}")
