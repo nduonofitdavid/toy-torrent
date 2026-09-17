@@ -60,6 +60,49 @@ def encode_url(digest: str):
     res.append(digest[i])
   return "".join(res)
 
+def bencode_int(payload: int) -> str:
+  return f"i{payload}e" 
+
+def bencode_string(payload: str) -> str:
+  len_str = len(payload)
+  return f"{len_str}:{payload}"
+
+def bencode_list(payload: list) -> str:
+  result = ["l"]
+  for item in payload:
+    if isinstance(item, list):
+      result.append(bencode_list(item))
+    elif isinstance(item, str):
+      result.append(bencode_string(item))
+    elif isinstance(item, int|float):
+      item = int(item)
+      result.append(bencode_int(item))
+    elif isinstance(item, dict):
+      result.append(bencode_dictionary(item))
+    else:
+      raise Exception(f"An unexpected error occured when bencoding {type(item)}")
+  result.append("e")
+  return "".join(result)
+
+def bencode_dictionary(payload: dict) -> str:
+  result = ["d"]
+  for key, value in payload.items():
+    if not isinstance(key, str):
+      raise Exception("The keys for bencoded dictionaries can only be strings")
+    result.append(bencode_string(key))
+    if isinstance(value, list):
+      result.append(bencode_list(value))
+    elif isinstance(value, str):
+      result.append(bencode_string(value))
+    elif isinstance(value, int):
+      result.append(bencode_int(value))
+    elif isinstance(value, dict):
+      result.append(bencode_dictionary(value))
+    else:
+      raise Exception(f"An unexpected error occured when bencoding value of type {type(value)}")
+  result.append("e")
+  return "".join(result)
+
 if __name__ == "__main__":
   digest = calculate_info_hash(info_dict, use_hex=True)
   assert digest == "d69f91e6b2ae4c542468d1073a71d4ea13879a7f"
@@ -75,3 +118,11 @@ if __name__ == "__main__":
 
   for res_, true in zip(res, true_piece_hashes):
     assert res_ == true
+
+  # Bencode functions base tests.
+  assert bencode_dictionary({"meaning": 42, "wiki": "bencode"}) == "d7:meaningi42e4:wiki7:bencodee"
+  assert bencode_list(["bencode", -20]) == "l7:bencodei-20ee"
+  assert bencode_string("water") == "5:water"
+  assert bencode_int(1) == "i1e"
+  assert bencode_int(4) == "i4e"
+  assert bencode_int(-4) == "i-4e"

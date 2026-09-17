@@ -1,10 +1,10 @@
 import json
 import sys
 
-from .aliases import Command
+from .aliases import Command, MSGEXTID, MAX_RETRIES, WaitError
 from .decoder import decode_string, decode_int, decode_list, decode_dictionary
-from .encoder import calculate_info_hash, pieces_to_list
-from .utils import open_torrent_file, get_peers, perform_handshake, download_piece, parse_magnetlink
+from .encoder import calculate_info_hash, pieces_to_list, bencode_dictionary
+from .utils import open_torrent_file, get_peers, perform_handshake, download_piece, parse_magnetlink, magnet_handshake, recvall, magnet_info, download_piece_magnet
 
 def decode_bencode(bencoded_value: bytes):
   sample = bencoded_value
@@ -99,7 +99,7 @@ def main():
       left = tor_dict["info"]["length"]
       info_hash: bytes = calculate_info_hash(tor_dict["info"], use_hex=False)
       peers = get_peers(tracker_url, left, info_hash)
-      download_piece(torr_file, tor_dict, piece_idx, peers, output_file=out_filename)
+      download_piece(tor_dict["info"], piece_idx, peers, output_file=out_filename)
       return
 
     case "download":
@@ -131,7 +131,7 @@ def main():
       
       for piece_idx in range(no_pieces):
         print("piece_idx: ", piece_idx)
-        download_piece(torr_file, tor_dict, piece_idx, peers, out_filename)        
+        download_piece(tor_dict["info"], piece_idx, peers, out_filename)        
 
       return 
 
@@ -145,17 +145,46 @@ def main():
     case "magnet_handshake":
       magnet_link = sys.argv[2]
       magnet_dict = parse_magnetlink(magnet_link, verify_tor=True)
-
+      
       tracker_url = magnet_dict["tr"]
-      left = 999 # dummy placeholder value since length of file is not known
       info_hash = bytes.fromhex(magnet_dict["xt"])
-      peers = get_peers(tracker_url, left, info_hash)
-      reserved_bytes = 2**20
-      for peer in peers:
-        soc = perform_handshake(info_hash, peer, reserved_bytes_val=reserved_bytes, close_soc=False)
-        if soc:
-          soc.close()
-          break
+      response = magnet_handshake(tracker_url, info_hash)
+      if response:
+        soc, _ = response
+        soc.close()
+      return
+
+    case "magnet_info":
+      magnet_link = sys.argv[2]
+      response = magnet_info(magnet_link)
+      if response:
+        soc, _ = response
+        soc.close()
+      return
+
+    case "magnet_download_piece":
+      if (len(sys.argv) < 4) or (len(sys.argv) != 6):
+        print("Invalid parameters!")
+        return 
+
+      out_filename = None
+      if sys.argv[2] == '-o':
+        out_filename = sys.argv[3]
+        magnet_link = sys.argv[4]
+        piece_idx = int(sys.argv[5])
+      else:
+        magnet_link = sys.argv[2]
+        piece_idx = int(sys.argv[3])
+      
+      response = magnet_info(magnet_link, debug=False)
+      if not response:
+        print("An error occured when downloading piece")
+        return
+      soc, meta_dict = response
+      if not out_filename:
+        out_filename = meta_dict["name"].encode(encoding="utf-8") + f"piece-{piece_idx}"
+
+      download_piece_magnet(soc=soc, info_dict=meta_dict, piece_idx=piece_idx, output_filename=out_filename)
       return
 
     case _:
