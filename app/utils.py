@@ -122,26 +122,27 @@ def has_piece(s_byte: int, bit_position: int) -> bool:
   shifted = s_byte >> bit_position
   return (shifted & 1) == 1
 
-def download_piece_sub(soc: socket.socket, info_dict: dict, piece_idx: int, output_file: str) -> int: 
-  reply = recvall(soc, 5)
-  msg_len = int.from_bytes(reply[:4], byteorder="big")
-  msg_id = MSGID(reply[4])
-  if msg_id != MSGID.BITFIELD:
-    print("inside here")
-    # if the peer has partitions, the first message is a bitfield, if not, we move to the next peer.
-    _ = recvall(soc, msg_len-1)
-    print(f"Peer does not have partitions!")
-    soc.close()
-    return 1
+def download_piece_sub(soc: socket.socket, info_dict: dict, piece_idx: int, output_file: str, check_bitfield: bool=True) -> int: 
+  if check_bitfield:
+    reply = recvall(soc, 5)
+    msg_len = int.from_bytes(reply[:4], byteorder="big")
+    msg_id = MSGID(reply[4])
+    if msg_id != MSGID.BITFIELD:
+      print("inside here")
+      # if the peer has partitions, the first message is a bitfield, if not, we move to the next peer.
+      _ = recvall(soc, msg_len-1)
+      print(f"Peer does not have partitions!")
+      soc.close()
+      return 1
 
-  bitfield_payload = recvall(soc, msg_len-1)
-  byte_idx = piece_idx // 8
-  bit_position = 7 - (piece_idx % 8)
+    bitfield_payload = recvall(soc, msg_len-1)
+    byte_idx = piece_idx // 8
+    bit_position = 7 - (piece_idx % 8)
 
-  if not has_piece(bitfield_payload[byte_idx], bit_position):
-    print(f"Peer does not have the desired partition!")
-    soc.close()
-    return 1
+    if not has_piece(bitfield_payload[byte_idx], bit_position):
+      print(f"Peer does not have the desired partition!")
+      soc.close()
+      return 1
 
   # send an interested message
   msg_len = int(1).to_bytes(4, byteorder="big")
@@ -178,8 +179,10 @@ def download_piece_sub(soc: socket.socket, info_dict: dict, piece_idx: int, outp
     piece_size = piece_length
   else:
     piece_size = piece_remainder
+
   blk_quotient, blk_remainder = divmod(piece_size, _16KB)
   walk = [(0, 0) for _ in range(blk_quotient)]
+
   if blk_remainder != 0:
     walk.append((0, blk_remainder))
   # create blocks based on quotient and remainders
@@ -222,13 +225,13 @@ def download_piece_sub(soc: socket.socket, info_dict: dict, piece_idx: int, outp
   buffer.seek(0)
   contents = buffer.read()
   hash_digest = hashlib.sha1(contents).digest()
-  print(len(hash_digest))
-  print("downloaded hash", hash_digest)
+  #print(len(hash_digest))
+  #print("downloaded hash", hash_digest)
 
   start = piece_idx * 20
   end = start+20
 
-  print("tor_hash" ,info_dict["pieces"][start:end])
+  #print("tor_hash" ,info_dict["pieces"][start:end])
   assert hash_digest == info_dict["pieces"][start:end]
 
   with open(output_file, "ab") as file:
@@ -239,11 +242,11 @@ def download_piece_sub(soc: socket.socket, info_dict: dict, piece_idx: int, outp
 
 
 
-def download_piece(info_dict: dict, piece_idx: int, peers: list[str], output_file: str) -> None:
+def download_piece(info_dict: dict, piece_idx: int, peers: list[str], output_file: str) -> socket.socket | None:
   info_hash = calculate_info_hash(info_dict, use_hex=False)
   assert(isinstance(info_hash, bytes))
   for peer in peers:
-    soc: socket.socket | None = perform_handshake(info_hash, peer, close_soc=False)
+    soc: socket.socket | None = perform_handshake(info_hash, peer, close_soc=False, debug=False)
     if not soc:
       # the error message will be printed by the perform_handshake function already
       continue 
@@ -252,7 +255,7 @@ def download_piece(info_dict: dict, piece_idx: int, peers: list[str], output_fil
     if res == 1:
       continue
     else:
-      break
+      return soc
 
 #magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce
 def parse_magnetlink(link: str, verify_tor=False):
@@ -312,12 +315,13 @@ def parse_magnetlink(link: str, verify_tor=False):
 
   return keys
 
-def magnet_handshake(tracker_url: str, info_hash: bytes, debug:bool=True) -> tuple[socket.socket, dict] | None:
+def magnet_handshake(tracker_url: str, info_hash: bytes, debug:bool=True, piece_idx: int|None=None) -> tuple[socket.socket, dict, str|None] | None:
   left = 999 # dummy placeholder value since length of file is not known
   peers = get_peers(tracker_url, left, info_hash)
   reserved_bytes = 2**20
   for peer in peers:
     soc = perform_handshake(info_hash, peer, reserved_bytes_val=reserved_bytes, close_soc=False, verify_extension=True, debug=False)
+    peer_ret: str | None = None
     if soc:
       reply = recvall(soc, 4)
       msg_len = int.from_bytes(reply)
@@ -327,6 +331,14 @@ def magnet_handshake(tracker_url: str, info_hash: bytes, debug:bool=True) -> tup
         print(f"Peer {peer} does not have partitions!")
         soc.close()
         continue
+
+      if piece_idx:
+        bitfield_payload = payload[1:]
+        byte_idx = piece_idx // 8
+        bit_position = 7 - (piece_idx % 8)
+
+        if not has_piece(bitfield_payload[byte_idx], bit_position):
+          peer_ret = peer
 
       # construct extension handshake message
       pay_msg_id = int(20).to_bytes(1)
@@ -369,21 +381,21 @@ def magnet_handshake(tracker_url: str, info_hash: bytes, debug:bool=True) -> tup
         if "ut_metadata" in peer_meta:
           if debug:
             print("Peer Metadata Extension ID: ", peer_meta["ut_metadata"])
-          return soc, b_dict
+          return soc, b_dict, peer_ret
         else:
           raise Exception("Extension format not ut_metadata not provided")
       else:
         raise Exception("Malformed response, the key 'm' was not found")
 
-def magnet_info(magnet_link: str, debug=True) -> tuple[socket.socket, dict] | None:
+def magnet_info(magnet_link: str, debug=True, piece_idx: int|None=None) -> tuple[socket.socket, dict, str|None] | None:
   magnet_dict = parse_magnetlink(magnet_link, verify_tor=True)
   tracker_url = magnet_dict["tr"]
   info_hash = bytes.fromhex(magnet_dict["xt"])
-  response = magnet_handshake(tracker_url, info_hash, debug=False)
+  response = magnet_handshake(tracker_url, info_hash, debug=False, piece_idx=piece_idx)
   if not response:
     print("Could not establish reliable connection!")
     return
-  soc, b_dict = response
+  soc, b_dict, peer_ret = response
 
   # the next step is to send an extension request message
   peer_metadata_ext_id = int(b_dict["m"]["ut_metadata"]).to_bytes(1)
@@ -431,12 +443,50 @@ def magnet_info(magnet_link: str, debug=True) -> tuple[socket.socket, dict] | No
     for piece in pieces_to_list(metad_dict["pieces"]):
       print(piece)
 
-  return soc, metad_dict
+  return soc, metad_dict, peer_ret
 
-def download_piece_magnet(soc: socket.socket, piece_idx: int, info_dict: dict, output_filename: str):
-  res = download_piece_sub(soc=soc, info_dict=info_dict, piece_idx=piece_idx, output_file=output_filename)
-  if res == 1:
-    raise Exception("An error occured while downloading the piece")
+def download_piece_magnet(soc: socket.socket, piece_idx: int, info_dict: dict, output_filename: str, magnet_dict: dict, peer_ret: str|None=None):
+  if not peer_ret:
+    res = download_piece_sub(soc=soc, info_dict=info_dict, piece_idx=piece_idx, output_file=output_filename, check_bitfield=False)
+    if res == 1:
+      raise Exception("An error occured while downloading the piece")
+    return soc
+
+  info_hash = bytes.fromhex(magnet_dict["xt"])
+  for peer in get_peers(
+    tracker_url=magnet_dict["tr"],
+    left=999,
+    info_hash_url=info_hash
+  ):
+    if peer == peer_ret:
+      continue
+    sock: socket.socket | None = perform_handshake(info_hash, peer, close_soc=False)
+    if not sock:
+      # the error message will be printed by the perform_handshake function already
+      continue 
+
+    res = download_piece_sub(soc=sock, info_dict=info_dict, piece_idx=piece_idx, output_file=output_filename)      
+    if res == 1:
+      continue
+    else:
+      break
+
+# def download_piece_magnet(magnet_link: str, piece_idx: int, out_filename: str|None=None):
+#   magnet_dict = parse_magnetlink(magnet_link, verify_tor=True)
+#   response = magnet_info(magnet_link, debug=False, piece_idx=piece_idx)
+
+#   if not response:
+#     print("An error occured when communicating with peers")
+#     return
+      
+#   soc, meta_dict, peer_ret = response
+#   outfile = out_filename
+#   if outfile is None:
+#     outfile = meta_dict["name"].encode(encoding="utf-8") + f"piece-{piece_idx}"
+
+#   download_piece_magnet_sub(soc=soc, info_dict=meta_dict, piece_idx=piece_idx, output_filename=outfile, magnet_dict=magnet_dict, peer_ret=peer_ret)
+# ./your_program.sh magnet_download -o sample "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+
   
 
 
