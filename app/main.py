@@ -224,7 +224,6 @@ def main():
       # calculate the size of the other pieces and download them
       file_length = meta_dict["length"]
       piece_length = meta_dict["piece length"]
-      # print(meta_dict["name"])
 
       piece_quotient, piece_remainder = divmod(file_length, piece_length)
       no_pieces = piece_quotient if piece_remainder == 0 else piece_quotient+1

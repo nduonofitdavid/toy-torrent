@@ -1,0 +1,4 @@
+# This is the format for requesting, and receiving a magnet metadata file from a client
+# ./your_program.sh magnet_info <magnet-link>
+
+./your_program.sh magnet_info "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"

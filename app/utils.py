@@ -240,8 +240,6 @@ def download_piece_sub(soc: socket.socket, info_dict: dict, piece_idx: int, outp
     soc.close()
     return 0
 
-
-
 def download_piece(info_dict: dict, piece_idx: int, peers: list[str], output_file: str) -> socket.socket | None:
   info_hash = calculate_info_hash(info_dict, use_hex=False)
   assert(isinstance(info_hash, bytes))
@@ -471,28 +469,8 @@ def download_piece_magnet(soc: socket.socket, piece_idx: int, info_dict: dict, o
     else:
       break
 
-# def download_piece_magnet(magnet_link: str, piece_idx: int, out_filename: str|None=None):
-#   magnet_dict = parse_magnetlink(magnet_link, verify_tor=True)
-#   response = magnet_info(magnet_link, debug=False, piece_idx=piece_idx)
-
-#   if not response:
-#     print("An error occured when communicating with peers")
-#     return
-      
-#   soc, meta_dict, peer_ret = response
-#   outfile = out_filename
-#   if outfile is None:
-#     outfile = meta_dict["name"].encode(encoding="utf-8") + f"piece-{piece_idx}"
-
-#   download_piece_magnet_sub(soc=soc, info_dict=meta_dict, piece_idx=piece_idx, output_filename=outfile, magnet_dict=magnet_dict, peer_ret=peer_ret)
-# ./your_program.sh magnet_download -o sample "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
-
-  
-
-
 if __name__ == "__main__":
   print(generate_random_bytes(20))
   print(parse_magnetlink("magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"))
   print(parse_magnetlink("magnet:?xt=1&"))
   print(parse_magnetlink("magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165"))
-
