@@ -52,7 +52,8 @@ def pieces_to_list(pieces: bytes):
 
   return res
 
-def encode_url(digest: str):
+def encode_url(digest: str) -> str:
+  """Encodes a hex digest as a url"""
   res = []
   for i in range(1, len(digest), 2):
     res.append("%")
@@ -61,13 +62,16 @@ def encode_url(digest: str):
   return "".join(res)
 
 def bencode_int(payload: int) -> str:
+  """Encodes an integer using bencoding"""
   return f"i{payload}e" 
 
 def bencode_string(payload: str) -> str:
+  """Encodes a string using bencoding"""
   len_str = len(payload)
   return f"{len_str}:{payload}"
 
 def bencode_list(payload: list) -> str:
+  """Encodes a list using bencoding"""
   result = ["l"]
   for item in payload:
     if isinstance(item, list):
@@ -85,6 +89,7 @@ def bencode_list(payload: list) -> str:
   return "".join(result)
 
 def bencode_dictionary(payload: dict) -> str:
+  """Encodes a dictionary using bencoding"""
   result = ["d"]
   for key, value in payload.items():
     if not isinstance(key, str):

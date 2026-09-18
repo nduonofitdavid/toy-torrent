@@ -18,12 +18,14 @@ DOWNLOADED = 0
 COMPACT = 1
 
 def open_torrent_file(filename: str) -> dict:
+  """open a torrent file from disk, and return its dictionary representation"""
   with open(filename, "rb") as file:
     sample = file.readline()
   tor_dict, _ = decode_dictionary(sample, 1)
   return tor_dict
 
 def recvall(sock: socket.socket, length: int) -> bytes:
+  """Receive a number of bytes from a socket, and return those bytes"""
   data = b''
   while len(data) < length:
     more = sock.recv(length - len(data))
@@ -35,14 +37,29 @@ def recvall(sock: socket.socket, length: int) -> bytes:
 # 165.232.38.164:51433
 
 def generate_random_bytes(length: int):
+  """Generate a random string of n, returns that string"""
   result = random.choices(ascii_letters, k=length)
   return "".join(result)
 
 def get_peers(tracker_url: str, left: int, info_hash_url: bytes, port: int=DEFAULT_PORT, uploaded: int=UPLOADED, downloaded: int=DOWNLOADED, compact: int=COMPACT) -> list[str]:
-  # tracker_url = tor_dict["announce"].decode(encoding="utf-8")
-  # left = tor_dict["info"]["length"]
+  """
+  Desc: Fetches a list of peers from the provided tracker url
+  Params:
+    tracker_url: str -> A string representing the url of the tracker
+    info_hash_url: bytes -> A sequence of bytes representing the info hash
+
+    for more information about the parameters below, 
+    visit https://www.bittorrent.org/beps/bep_0003.html#trackers\n
+    and \n
+    https://www.bittorrent.org/beps/bep_0023.html \n
+    port: int
+    uploaded: int
+    downloaded: int
+    compact: int
+  Return:
+    list[str] -> A list of strings reprenting the peers fetched from the tracker url
+  """
   peer_id: str = generate_random_bytes(20)
-  # info_hash_url = calculate_info_hash(tor_dict["info"], use_hex=False) # let requests handle url conversion automatically
 
   response = requests.get(url=tracker_url, params={
     "info_hash": info_hash_url,
@@ -65,6 +82,22 @@ def get_peers(tracker_url: str, left: int, info_hash_url: bytes, port: int=DEFAU
   return decode_peers(peers)
 
 def perform_handshake(info_hash_in: bytes, tor_client: str, reserved_bytes_val: int=0, verify_extension: bool=False, close_soc: bool=True, debug:bool=True) -> socket.socket | None:
+  """
+  Desc: Performs a handshake with a given peer loosely following the bittorrent protocol
+  Params:
+    info_hash_in: bytes -> A sequence of bytes representing the info hash of a torrent file
+    tor_client: str -> A string representing the ip address and port of a bittorrent server
+    verify_extension: bool -> Whether or not to verify if a peer supports bittorrent extensions
+    close_soc: bool -> Whether or not the socket connection with a peer is closed
+    debug: bool -> Whether or not to output statements to the terminal
+
+    for more information about the reserved bytes, visit \n
+    https://www.bittorrent.org/beps/bep_0003.html#peer-protocol
+    reserved_bytes_val: int 
+
+  Return:
+    socket.socket | None -> Returns a socket if close_soc is set to true, or else returns None
+  """
   ip_address, port = tor_client.split(':')
 
   buffer = io.BytesIO()
@@ -107,6 +140,14 @@ def perform_handshake(info_hash_in: bytes, tor_client: str, reserved_bytes_val: 
 
 def has_piece(s_byte: int, bit_position: int) -> bool:
   """
+  Desc: Checks if a bit possition in a byte sequence is zero or 1.
+  Params: 
+    s_byte: int -> The integer representation of a sequence of bytes.
+    bit_position: int -> The bit position to check.
+  Returns:
+    bool -> A true or false value indicating if the condition was satisfied
+  
+  Algorithm Example:
     5 / 8 -> 0, 5\n
     7 - 5 = 2\n
     7654 3210\n
@@ -241,6 +282,7 @@ def download_piece_sub(soc: socket.socket, info_dict: dict, piece_idx: int, outp
     return 0
 
 def download_piece(info_dict: dict, piece_idx: int, peers: list[str], output_file: str) -> socket.socket | None:
+  """Downlaods a single piece from a bittorrent file, takes the info dict, the piece index and a list of peers"""
   info_hash = calculate_info_hash(info_dict, use_hex=False)
   assert(isinstance(info_hash, bytes))
   for peer in peers:
@@ -256,13 +298,22 @@ def download_piece(info_dict: dict, piece_idx: int, peers: list[str], output_fil
       return soc
 
 #magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce
-def parse_magnetlink(link: str, verify_tor=False):
+def parse_magnetlink(link: str, verify_tor: bool=False) -> dict:
+  """
+  Desc: Parses a magnet link, and returns its dictionary representation
+  Params:
+    link: str -> A str representing the magnet link
+    verify_tor: bool -> If the function should check that the magnet link is meant for bittorrent.
+  Return:
+    dict -> A dictionary representing the parsed magnet link.
+  """
   keys = {}
   skip = 8
   if link[:skip] != "magnet:?":
     raise Exception("Invalid magnet link")
 
   def add_val(dict, key, val):
+    """A helper function that avoids replacing keys with multiple occurences, instead treats their values as a list of values"""
     val = unquote(val)
     if key in dict:
       store = dict[key]

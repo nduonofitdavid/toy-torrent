@@ -1,18 +1,12 @@
-"""
-d7:meaningi42e4:wiki7:bencodee
-i24e
-7:water
-l5:wateri47ee
-
-should we check if an item is a digit, we find the nearest colon
-but what if we are sending the string water23:5water
-
-d8:announce31:http://tracker.example/announce4:infod6:length6:1234564:name8:file.txt11:piecelength5:163846:pieces20:12345678901234567890ee
-
-"""
-# if every thing is encoded using 4 byte to represent things
-
 def decode_int(sample: bytes, start: int=0,) -> tuple[int, int]:
+  """
+  Desc: decodes a bencoded integer.
+  Params: 
+    sample: bytes -> This is a bencoded sequence of bytes
+    start: int -> The index to start decoding from
+  Return:
+    tuple[int, int] -> An integer representing the decoded value, and the index where the bencoded integer ends in the input byte sequence.
+  """
   end_idx = sample.find(b"e", start)
   if end_idx == -1:
     raise Exception("Error decoding the bencoded integer")
@@ -23,6 +17,14 @@ def decode_int(sample: bytes, start: int=0,) -> tuple[int, int]:
     raise Exception("Error decoding the bencoded integer", sample[start:end_idx])
 
 def decode_list(sample: bytes, start: int=0) -> tuple[list, int]:
+  """
+  Desc: decodes a bencoded list.
+  Params:
+    sample: bytes -> This is a bencoded sequence of bytes
+    start: int -> The index to start decoding from
+  Return:
+    tuple[list, int] -> A list representing the decoded list, and an integer representing the index where the bencoded list ends
+  """
   dec_list = []
   idx = start
   while idx < len(sample):
@@ -46,6 +48,14 @@ def decode_list(sample: bytes, start: int=0) -> tuple[list, int]:
   raise Exception("The bencoded list was not terminated")
 
 def decode_string(sample: bytes, start: int=0) -> tuple[bytes, int]:
+  """
+  Desc: Decode a bencoded string
+  Params:
+    sample: bytes -> This is a bencoded sequence of bytes
+    start: int -> The index to start decoding from
+  Return:
+    tuple[bytes, int] -> A sequence of bytes representing the decoded str, and an integer representing the index where the bencoded str ends
+  """
   stp_point = sample.find(b":", start)
   if stp_point == -1:
     raise Exception("An error occured when decoding bencoded string")
@@ -66,6 +76,14 @@ def decode_string(sample: bytes, start: int=0) -> tuple[bytes, int]:
   return res, k
   
 def decode_dictionary(sample: bytes, start=0) -> tuple[dict, int]:
+  """
+  Desc: Decodes a bencoded dictionary
+  Params:
+    sample: bytes -> This is a bencoded sequence of bytes
+    start: int -> The index to start decoding from
+  Return:
+    tuple[list, int] -> A dict representing the decoded dict, and an integer representing the index where the bencoded dict ends
+  """
   dec_dict = {}
 
   if start >= len(sample):
@@ -118,6 +136,7 @@ def decode_dictionary(sample: bytes, start=0) -> tuple[dict, int]:
   raise Exception("Bencoded dict not terminated")
 
 def decode_peers(sample: bytes) -> list[str]:
+  """Converts a sequence of bytes containing peers into a list of strings containing those peers"""
   res: list[str] = []
   idx = 0
 

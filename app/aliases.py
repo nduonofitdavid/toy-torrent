@@ -6,6 +6,7 @@ MAX_RETRIES = 15
 _16KB = 2**14
 
 class MSGID(IntEnum):
+  """Possible message IDs that could be sent by a bittorrent client"""
   CHOKE=0
   UNCHOKE=1
   INTERESTED=2
@@ -17,6 +18,7 @@ class MSGID(IntEnum):
   CANCEL=8
 
 class MSGEXTID(IntEnum):
+  """Possible message IDs that could be sent by a bittorrent client when using extensions"""
   REQUEST=0
   DATA=1
   REJECT=2
